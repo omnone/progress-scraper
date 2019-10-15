@@ -13,7 +13,7 @@ import sys
 # ***DISCLAIMER:
 # Scraping data may be considered illegal. This script is developed for
 # educational purposes only. Before scraping a website please get the owners
-# approval first.
+# permission first.
 ##################################################################################################################
 
 
