@@ -81,10 +81,7 @@ def save_results_csv(xrostoumena, perasmena, user):
     # print('[+]Writing data to .csv file')
     # print(perasmena)
 
-    path = (os.path.abspath(os.path.join(os.path.abspath(__file__), os.pardir)).replace(
-        "\\progress", "\\storage\\app\\public\\grades_files"))
-
-    with open(path+"\\grades"+"_"+user+".csv", mode='w', newline='') as file:
+    with open("grades"+"_"+user+".csv", mode='w', newline='') as file:
         headers = ['Όνομα Μαθήματος', 'Περίοδος', 'Εξάμηνο', 'Βαθμός']
         csv_writer = DictWriter(file, delimiter=',',
                                 quotechar='"', fieldnames=headers)
