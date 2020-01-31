@@ -7,9 +7,13 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.firefox.options import Options
+from tqdm import *
 import sys
 
+import threading
 
+import time
+##################################################################################################################
 # ***DISCLAIMER:
 # Scraping data may be considered illegal. This script is developed for
 # educational purposes only. Before scraping a website please get the owners
@@ -17,10 +21,10 @@ import sys
 ##################################################################################################################
 
 
-def wait_for_element(delay, element):
+def wait_for_element(delay, element, driver):
     """Wait for the element to appear on the webpage before continuing"""
     try:
-        myElem = WebDriverWait(browser, delay).until(
+        myElem = WebDriverWait(driver, delay).until(
             EC.presence_of_element_located((By.ID, element)))
         # print(f"[+]Page is ready , \'{element}\' found")
     except TimeoutException:
@@ -29,57 +33,52 @@ def wait_for_element(delay, element):
 
 
 ##################################################################################################################
-def login(user, passw):
+def login(user, passw, driver):
     """Do the required login"""
-    # print(f'[*] Trying log in with username: \'{user}\'')
-    username = browser.find_element_by_id("inputEmail")  # username form field
-    password = browser.find_element_by_id(
+    print(f'[*] Trying log in with username: \'{user}\'')
+    username = driver.find_element_by_id("inputEmail")  # username form field
+    password = driver.find_element_by_id(
         "inputPassword")  # password form field
 
     username.send_keys(user)
     password.send_keys(passw)
 
-    browser.find_element_by_css_selector(
+    driver.find_element_by_css_selector(
         '.btn.btn-lg.btn-primary.btn-block').click()
 
 ##################################################################################################################
 
 
-def get_lessons_from_progress():
+def get_lessons_from_progress(driver):
     """Finds specific elements from the HTML source code in order to get their values - dirty workaround because progress doesn't like scraping it"""
-    wait_for_element(5, 'contentAreaFrame')
 
-    frame1 = WebDriverWait(browser, delay).until(
+    frame1 = WebDriverWait(driver, 5).until(
         EC.frame_to_be_available_and_switch_to_it((By.ID, 'contentAreaFrame')))
 
-    # frame1 = browser.find_element_by_id('contentAreaFrame')
-    # browser.switch_to.frame(frame1)
+    driver.implicitly_wait(12)
 
-    wait_for_element(5, 'isolatedWorkAreaForm')
-    lessons_table = browser.find_element_by_id('isolatedWorkAreaForm')
+    # wait_for_element(10, 'isolatedWorkAreaForm')
+    lessons_table = driver.find_element_by_id('isolatedWorkAreaForm')
     val = lessons_table.get_attribute("action")
 
-    browser.get(val)
+    driver.get(val)
 
-    wait_for_element(5, 'WD3F-contentTBody')
-    browser.refresh()
-    wait_for_element(10, 'WD3F-contentTBody')
-    lessons_table = browser.find_element_by_id('WD3F-contentTBody')
+    # wait_for_element(10, 'WD3F-contentTBody')
+    driver.refresh()
+    wait_for_element(7, 'WD3F-contentTBody', driver)
+    lessons_table = driver.find_element_by_id('WD3F-contentTBody')
 
-    wait_for_element(5, 'WD10AA')
-    # print(browser.find_element_by_id('WD10AA').text)#mesos oros
+    # wait_for_element(10, 'WD10AA')
+
+    # print(driver.find_element_by_id('WD10AA').text)#mesos oros
 
     # get all of the rows in the table
     return lessons_table.find_elements_by_xpath(".//tr")
-
-    # return lessons_table.find_elements_by_xpath(".//tr")  # get all of the rows in the table
 
 
 ##################################################################################################################
 def save_results_csv(xrostoumena, perasmena, user):
     """Export data to a csv file"""
-    # print('[+]Writing data to .csv file')
-    # print(perasmena)
 
     with open("grades"+"_"+user+".csv", mode='w', newline='') as file:
         headers = ['Όνομα Μαθήματος', 'Περίοδος', 'Εξάμηνο', 'Βαθμός']
@@ -103,6 +102,8 @@ def save_results_csv(xrostoumena, perasmena, user):
                 'Βαθμός': row[3]
             })
 
+    print(f'[+]Grades saved : grades_{user}.csv')
+
 
 ##################################################################################################################
 def calculate_ECTS(ects, xeim, ear, period):
@@ -116,91 +117,99 @@ def calculate_ECTS(ects, xeim, ear, period):
 
 
 ##################################################################################################################
+
 def find_lessons(rows):
 
     rows.pop(0)
 
-    seen = []
     xrostoumena = []
     perasmena = []
 
-    for row in rows:
-        if row.find_elements_by_xpath(".//td")[0] != ' ':
-            lesson = [td.text for td in row.find_elements_by_xpath(
-                ".//td") if td.text != '']
-            if len(lesson) > 20:
+    lessons = [[row.find_elements_by_xpath(".//td")[3].text,
+                row.find_elements_by_xpath(".//td")[6].text,
+                row.find_elements_by_xpath(".//td")[19].text,
+                row.find_elements_by_xpath(".//td")[4].text]
+               for row in rows if row.find_elements_by_xpath(".//td")[0].text != ' ' and len(row.find_elements_by_xpath(".//td")) > 3]
 
-                if(lesson[4] == 'NS' or lesson[4] == ' '):
-                    if not any(lesson[3] in sl for sl in xrostoumena):
-                        xrostoumena.append(
-                            [lesson[3], lesson[6], lesson[19], lesson[10]])
-                else:
-                    try:
-                        grade = float(lesson[4].replace(',', '.'))
-                    except ValueError:
-                        print(lesson[4])
+    for i in reversed(range(len(lessons))):
 
-                    if(grade >= 5.0):
-                        perasmena.append([lesson[3], lesson[6],
-                                          lesson[19], grade])
-                    else:
-                        if not any(lesson[3] in sl for sl in xrostoumena):
-                            xrostoumena.append(
-                                [lesson[3], lesson[6], lesson[19], lesson[10]])
+        if not lessons[i][0]:
+            del lessons[i]
+            continue
 
-            else:
-                continue
-    temp = [item for item in xrostoumena]
+        try:
+            grade = float(lessons[i][3].replace(',', '.'))
+        except:
+            grade = 0.0
 
-    for lesson in temp:
-        if any(lesson[0] in sl for sl in perasmena):
-            # print(f'To mathima {lesson[0]} einai perasmeno to vgazw')
-            xrostoumena.remove(lesson)
+        if(grade >= 5.0):
+            perasmena.append(lessons[i])
+            del lessons[i]
+        else:
+            continue
+
+    for i in reversed(range(len(lessons))):
+        try:
+            grade = float(lessons[i][3].replace(',', '.'))
+        except:
+            grade = 0.0
+
+        if(grade < 5.0 and not any(lessons[i][0] in les for les in perasmena) and not any(lessons[i][0] in les for les in xrostoumena)):
+            xrostoumena.append(lessons[i])
+
+        del lessons[i]
 
     return xrostoumena, perasmena
 
 
 ##################################################################################################################
+def main():
+    # prevent firefox from opening windows
+    options = Options()
 
-# prevent firefox from opening windows
-options = Options()
+    options.headless = True
 
-options.headless = True
-browser = webdriver.Firefox(
-    options=options, executable_path=os.path.dirname(os.path.abspath(__file__))+"\\geckodriver.exe")
+    # choose a browser that you have already installed on your machine
+    driver = webdriver.Firefox(
+        options=options, executable_path=os.path.dirname(os.path.abspath(__file__))+"\\geckodriver.exe")
+    # driver = webdriver.Chrome(
+    #     options=options, executable_path=os.path.dirname(os.path.abspath(__file__))+"\\geckodriver.exe")
 
-browser.get("https://progress.upatras.gr")
+    driver.get("https://progress.upatras.gr")
 
-# login to progress.upatras.gr
-print(sys.argv)
-login(sys.argv[1], sys.argv[2])
+    # login to progress.upatras.gr
+    login(sys.argv[1], sys.argv[2], driver)
 
-wait_for_element(5, 'welcomeText')
+    wait_for_element(5, 'welcomeText', driver)
 
-# navigate to page behind login
-browser.get("https://progress.upatras.gr/irj/portal")
+    # navigate to page behind login
 
-wait_for_element(5, 'OL2N11')
+    wait_for_element(5, 'OL2N11', driver)
 
-delay = 5
-WebDriverWait(browser, delay).until(
-    EC.invisibility_of_element_located((By.ID, 'divLoadingBackground')))
-browser.find_element_by_id("0L2N11").click()
+    WebDriverWait(driver, 5).until(
+        EC.invisibility_of_element_located((By.ID, 'divLoadingBackground')))
 
-# get lessons information from table
-try:
-    # lessons = get_lessons()
-    lessons = get_lessons_from_progress()
-finally:
-    # close browser
-    # browser.close()
-    pass
+    driver.find_element_by_id("0L2N11").click()
+
+    # get lessons information from table
+    try:
+        lessons = get_lessons_from_progress(driver)
+    except Exception as e:
+        print(e)
+    finally:
+        pass
+
+    try:
+        # save results to csv file
+        xrostoumena, perasmena = find_lessons(lessons)
+
+        save_results_csv(xrostoumena, perasmena, sys.argv[1])
+    finally:
+        # close driver
+        driver.close()
 
 
-try:
-    # save results to csv file
-    xrostoumena, perasmena = find_lessons(lessons)
-    save_results_csv(xrostoumena, perasmena, sys.argv[1])
-finally:
-    # close browser
-    browser.close()
+if __name__ == "__main__":
+    # start_time = time.time()
+    main()
+    # print("--- %s seconds ---" % (time.time() - start_time))
